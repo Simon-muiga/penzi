@@ -18,7 +18,7 @@ class User(Base):
     religion = Column(String(30), nullable=True)
     ethnicity = Column(String(50), nullable=True)
     self_description = Column(Text, nullable=True)
-    registration_stage = Column(String(20), default="basic")
+    registration_stage = Column(String(100), default="basic")
     created_at = Column(DateTime, server_default=func.now())
 
 
