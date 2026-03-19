@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database import engine, get_db
 import models
@@ -7,6 +8,14 @@ import re
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["htttp://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def is_phone_number(text: str) -> bool:
@@ -358,3 +367,13 @@ def handle_yes(sender: str, db: Session) -> str:
         f"{requester.ethnicity or 'N/A'}. "
         f"Send DESCRIBE {requester_phone} to get more details about {requester.name}."
     )
+
+@app.get("/users")
+def get_users(db: Session = Depends(get_db)):
+    users = db.query(models.User).all()
+    return users
+
+@app.get("/messages")
+def get_messages(db: Session = Depends(get_db)):
+    messages = db.query(models.Message).all()
+    return messages
