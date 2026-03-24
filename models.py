@@ -31,3 +31,23 @@ class Message(Base):
     message = Column(Text, nullable=False)
     direction = Column(String(10), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class Match(Base):
+    __tablename__ = "matches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    requester_phone = Column(String(20), nullable=False)
+    matched_phone = Column(String(20), nullable=False)
+    status = Column(String(20), default="pending")
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class Admin(Base):
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False)
+    email = Column(String(100), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())

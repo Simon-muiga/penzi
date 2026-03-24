@@ -222,6 +222,15 @@ def handle_matching(sender: str, message: str, db: Session) -> str:
         return f"Sorry, no matches found for age {age_range} in {town}. Try a different age range or town."
 
     user.registration_stage = f"matching_{town}_{age_range}_0"
+
+    for match in matches:
+        new_match = models.Match(
+            requester_phone=sender,
+            matched_phone=match.phone_number,
+            status="pending"
+        )
+        db.add(new_match)
+
     db.commit()
 
     total = len(matches)
@@ -356,7 +365,16 @@ def handle_yes(sender: str, db: Session) -> str:
     if not requester:
         return "The person who requested your details is no longer available."
 
-    user.registration_stage = "complete"
+    
+    existing_match = db.query(models.Match).filter(
+        models.Match.requester_phone == requester_phone,
+        models.Match.matched_phone == sender
+    ).first()
+
+    if existing_match:
+        existing_match.status = "accepted"
+
+    user.registration_stage = "complete"    
     db.commit()
 
     return (
