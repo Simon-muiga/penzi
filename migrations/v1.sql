@@ -2,9 +2,6 @@
 -- Database Migration v1
 -- Initial table definitions
 
--- Fix name column (remove reserved word quotes)
-ALTER TABLE users RENAME COLUMN "name" TO name;
-
 -- public.users definition
 CREATE TABLE public.users (
     id serial4 NOT NULL,
