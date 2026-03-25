@@ -11,8 +11,13 @@ import models
 
 models.Base.metadata.create_all(bind=engine)
 
-SECRET_KEY = "penzi_secret_key_2024"
-ALGORITHM = "HS256"
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")      
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -22,7 +27,12 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000",
+                   "http://127.0.0.1:3000",
+                   "http://localhost:8001",
+                   "http://127.0.0.1:8001",
+    ],
+    
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
