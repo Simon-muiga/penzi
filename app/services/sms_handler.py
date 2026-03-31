@@ -1,25 +1,6 @@
-from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from database import engine, get_db
-import models
+from app import models
 import re
-
-models.Base.metadata.create_all(bind=engine)
-
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000",
-                   "http://127.0.0.1:3000",
-                   "http://localhost:8001",
-                   "http://127.0.0.1:8001",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 def is_phone_number(text: str) -> bool:
@@ -27,7 +8,13 @@ def is_phone_number(text: str) -> bool:
     return bool(re.match(pattern, text.strip()))
 
 
-def save_message(db: Session, sender: str, receiver: str, message: str, direction: str):
+def save_message(
+    db: Session,
+    sender: str,
+    receiver: str,
+    message: str,
+    direction: str
+):
     new_message = models.Message(
         sender=sender,
         receiver=receiver,
@@ -38,64 +25,35 @@ def save_message(db: Session, sender: str, receiver: str, message: str, directio
     db.commit()
 
 
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to Penzi Dating Service API"}
-
-
-@app.post("/sms")
-def receive_sms(payload: dict, db: Session = Depends(get_db)):
-    sender = payload.get("sender", "").strip()
-    message = payload.get("message", "").strip()
-
-    save_message(db, sender, "22141", message, "inbound")
-
-    response = handle_message(sender, message, db)
-
-    save_message(db, "22141", sender, response, "outbound")
-
-    return {"response": response}
-
-
 def handle_message(sender: str, message: str, db: Session) -> str:
-
-    # STEP 1: PENZI - Service activation
     if message.upper() == "PENZI":
         return (
-            "Welcome to our dating service with potential dating partners! "
+            "Welcome to our dating service with 6000 potential dating partners! "
             "To register SMS start#name#age#gender#county#town to 22141. "
             "E.g., start#Nickson#22#Male#Nairobi#Kitengela"
         )
 
-    # STEP 2: start#... - Basic registration
     if message.lower().startswith("start#"):
         return handle_registration(sender, message, db)
 
-    # STEP 3: details#... - Extra details
     if message.lower().startswith("details#"):
         return handle_details(sender, message, db)
 
-    # STEP 4: MYSELF ... - Self description
     if message.upper().startswith("MYSELF"):
         return handle_self_description(sender, message, db)
 
-    # STEP 5: match#... - Search for matches
     if message.lower().startswith("match#"):
         return handle_matching(sender, message, db)
 
-    # STEP 6: NEXT - Get more matches
     if message.upper() == "NEXT":
         return handle_next(sender, db)
 
-    # STEP 7: DESCRIBE 07xx - Get self description
     if message.upper().startswith("DESCRIBE"):
         return handle_describe(sender, message, db)
 
-    # STEP 8: YES - Confirm interest
     if message.upper() == "YES":
         return handle_yes(sender, db)
 
-    # STEP 9: Phone number - Get full profile
     if is_phone_number(message):
         return handle_profile_request(sender, message, db)
 
@@ -239,8 +197,9 @@ def handle_matching(sender: str, message: str, db: Session) -> str:
 
     total = len(matches)
     first_three = matches[:3]
+    opposite_label = "ladies" if opposite_gender == "Female" else "men"
 
-    response = f"We have {total} {'ladies' if opposite_gender == 'Female' else 'men'} who match your choice! We will send you details of 3 of them shortly.\n"
+    response = f"We have {total} {opposite_label} who match your choice! We will send you details of 3 of them shortly.\n"
     for match in first_three:
         response += f"{match.name} aged {match.age}, {match.phone_number}.\n"
 
@@ -318,7 +277,6 @@ def handle_profile_request(sender: str, message: str, db: Session) -> str:
             f"Do you want to know more about them? Send YES to 22141."
         )
         save_message(db, "22141", requested_user.phone_number, notification, "outbound")
-
         requested_user.registration_stage = f"interested_{sender}"
         db.commit()
 
@@ -369,7 +327,6 @@ def handle_yes(sender: str, db: Session) -> str:
     if not requester:
         return "The person who requested your details is no longer available."
 
-    
     existing_match = db.query(models.Match).filter(
         models.Match.requester_phone == requester_phone,
         models.Match.matched_phone == sender
@@ -378,7 +335,7 @@ def handle_yes(sender: str, db: Session) -> str:
     if existing_match:
         existing_match.status = "accepted"
 
-    user.registration_stage = "complete"    
+    user.registration_stage = "complete"
     db.commit()
 
     return (
@@ -389,13 +346,3 @@ def handle_yes(sender: str, db: Session) -> str:
         f"{requester.ethnicity or 'N/A'}. "
         f"Send DESCRIBE {requester_phone} to get more details about {requester.name}."
     )
-
-@app.get("/users")
-def get_users(db: Session = Depends(get_db)):
-    users = db.query(models.User).all()
-    return users
-
-@app.get("/messages")
-def get_messages(db: Session = Depends(get_db)):
-    messages = db.query(models.Message).all()
-    return messages
