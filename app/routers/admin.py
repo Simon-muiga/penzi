@@ -76,7 +76,29 @@ def get_matches(
     db: Session = Depends(get_db),
     current_admin: models.Admin = Depends(get_current_admin)
 ):
-    return db.query(models.Match).all()
+    matches = db.query(models.Match).all()
+    result = []
+    for match in matches:
+        requester = db.query(models.User).filter(
+            models.User.phone_number == match.requester_phone
+            ).first()
+        matched = db.query(models.User).filter(
+            models.User.phone_number == match.matched_phone
+            ).first()
+        result.append({
+            "id": match.id,
+            "requester_phone": match.requester_phone,
+            "requester_name": requester.name if requester else "Unknown",
+            "requester_age": requester.age if requester else "N/A",
+            "requester_town": requester.town if requester else "N/A",
+            "matched_phone": match.matched_phone,
+            "matched_name": matched.name if matched else "Unknown",
+            "matched_age": matched.age if matched else "N/A",
+            "matched_town": matched.town if matched else "N/A",
+            "status": match.status,
+            "created_at": match.created_at
+        })
+    return result
 
 
 @router.get("/stats", response_model=StatsResponse)
