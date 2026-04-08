@@ -1,11 +1,20 @@
 from sqlalchemy.orm import Session
 from app import models
 import re
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def is_phone_number(text: str) -> bool:
+    cleaned = text.strip().replace(" ", "")
     pattern = r'^(\+254|0)[17]\d{8}$'
-    return bool(re.match(pattern, text.strip()))
+    return bool(re.match(pattern, cleaned))
+
+
+def clean_phone(phone: str) -> str:
+    return phone.strip().replace(" ", "")
 
 
 def save_message(
@@ -15,61 +24,118 @@ def save_message(
     message: str,
     direction: str
 ):
-    new_message = models.Message(
-        sender=sender,
-        receiver=receiver,
-        message=message,
-        direction=direction
-    )
-    db.add(new_message)
-    db.commit()
+    try:
+        new_message = models.Message(
+            sender=sender,
+            receiver=receiver,
+            message=message,
+            direction=direction
+        )
+        db.add(new_message)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error saving message: {e}")
+        db.rollback()
 
 
 def handle_message(sender: str, message: str, db: Session) -> str:
-    if message.upper() == "PENZI":
-        return (
-            "Welcome to our dating service with 6000 potential dating partners! "
-            "To register SMS start#name#age#gender#county#town to 22141. "
-            "E.g., start#Nickson#22#Male#Nairobi#Kitengela"
-        )
+    # Edge case: empty message
+    if not message or not message.strip():
+        return "Invalid command. SMS PENZI to 22141 to get started."
 
-    if message.lower().startswith("start#"):
-        return handle_registration(sender, message, db)
+    # Trim and normalize
+    message = message.strip()
 
-    if message.lower().startswith("details#"):
-        return handle_details(sender, message, db)
+    try:
+        if message.upper() == "PENZI":
+            return (
+                "Welcome to our dating service with 6000 potential dating partners! "
+                "To register SMS start#name#age#gender#county#town to 22141. "
+                "E.g., start#Nickson#22#Male#Nairobi#Kitengela"
+            )
 
-    if message.upper().startswith("MYSELF"):
-        return handle_self_description(sender, message, db)
+        if message.lower().startswith("start#"):
+            return handle_registration(sender, message, db)
 
-    if message.lower().startswith("match#"):
-        return handle_matching(sender, message, db)
+        if message.lower().startswith("details#"):
+            return handle_details(sender, message, db)
 
-    if message.upper() == "NEXT":
-        return handle_next(sender, db)
+        if message.upper().startswith("MYSELF"):
+            return handle_self_description(sender, message, db)
 
-    if message.upper().startswith("DESCRIBE"):
-        return handle_describe(sender, message, db)
+        if message.lower().startswith("match#"):
+            return handle_matching(sender, message, db)
 
-    if message.upper() == "YES":
-        return handle_yes(sender, db)
+        if message.upper().strip() == "NEXT":
+            return handle_next(sender, db)
 
-    if is_phone_number(message):
-        return handle_profile_request(sender, message, db)
+        if message.upper().startswith("DESCRIBE"):
+            return handle_describe(sender, message, db)
 
-    return "Invalid command. SMS PENZI to 22141 to get started."
+        if message.upper().strip() == "YES":
+            return handle_yes(sender, db)
+
+        if is_phone_number(message):
+            return handle_profile_request(sender, clean_phone(message), db)
+
+        return "Invalid command. SMS PENZI to 22141 to get started."
+
+    except Exception as e:
+        logger.error(f"Error handling message from {sender}: {e}")
+        return "Sorry, something went wrong. Please try again."
 
 
 def handle_registration(sender: str, message: str, db: Session) -> str:
     parts = message.split("#")
+
+    # Edge case: wrong number of parts
     if len(parts) != 6:
         return "Invalid format. SMS start#name#age#gender#county#town to 22141."
 
     _, name, age, gender, county, town = parts
 
-    if not age.isdigit():
-        return "Invalid age. Please enter a number for age."
+    # Edge case: empty fields
+    if not name.strip():
+        return "Invalid format. Name cannot be empty."
 
+    if not age.strip():
+        return "Invalid format. Age cannot be empty."
+
+    if not gender.strip():
+        return "Invalid format. Gender cannot be empty."
+
+    if not county.strip():
+        return "Invalid format. County cannot be empty."
+
+    if not town.strip():
+        return "Invalid format. Town cannot be empty."
+
+    # Edge case: age is not a number
+    if not age.strip().isdigit():
+        return "Invalid age. Please enter a valid number. E.g., start#Nickson#22#Male#Nairobi#Kitengela"
+
+    age_int = int(age.strip())
+
+    # Edge case: unrealistic age
+    if age_int < 18:
+        return "Sorry, you must be at least 18 years old to register."
+
+    if age_int > 100:
+        return "Invalid age. Please enter a valid age."
+
+    # Edge case: invalid gender
+    gender_clean = gender.strip().lower()
+    if gender_clean not in ["male", "female", "m", "f"]:
+        return "Invalid gender. Please use Male or Female."
+
+    # Normalize gender
+    gender_normalized = "Male" if gender_clean in ["male", "m"] else "Female"
+
+    # Edge case: name too long
+    if len(name.strip()) > 100:
+        return "Name is too long. Please use a shorter name."
+
+    # Edge case: duplicate registration
     existing_user = db.query(models.User).filter(
         models.User.phone_number == sender
     ).first()
@@ -80,8 +146,8 @@ def handle_registration(sender: str, message: str, db: Session) -> str:
     new_user = models.User(
         phone_number=sender,
         name=name.strip(),
-        age=int(age),
-        gender=gender.strip(),
+        age=age_int,
+        gender=gender_normalized,
         county=county.strip(),
         town=town.strip(),
         registration_stage="basic"
@@ -90,7 +156,7 @@ def handle_registration(sender: str, message: str, db: Session) -> str:
     db.commit()
 
     return (
-        f"Your profile has been created successfully {name}. "
+        f"Your profile has been created successfully {name.strip()}. "
         "SMS details#levelOfEducation#profession#maritalStatus#religion#ethnicity to 22141. "
         "E.g. details#degree#engineer#single#christian#kikuyu"
     )
@@ -98,10 +164,15 @@ def handle_registration(sender: str, message: str, db: Session) -> str:
 
 def handle_details(sender: str, message: str, db: Session) -> str:
     parts = message.split("#")
+
     if len(parts) != 6:
         return "Invalid format. SMS details#education#profession#maritalStatus#religion#ethnicity to 22141."
 
     _, education, profession, marital_status, religion, ethnicity = parts
+
+    # Edge case: empty fields
+    if not all([education.strip(), profession.strip(), marital_status.strip(), religion.strip(), ethnicity.strip()]):
+        return "Invalid format. All fields are required. E.g. details#degree#engineer#single#christian#kikuyu"
 
     user = db.query(models.User).filter(
         models.User.phone_number == sender
@@ -128,8 +199,13 @@ def handle_details(sender: str, message: str, db: Session) -> str:
 def handle_self_description(sender: str, message: str, db: Session) -> str:
     description = message[6:].strip()
 
+    # Edge case: empty description
     if not description:
         return "Please provide a description after MYSELF. E.g., MYSELF tall, dark and funny"
+
+    # Edge case: description too short
+    if len(description) < 3:
+        return "Description is too short. Please provide more details about yourself."
 
     user = db.query(models.User).filter(
         models.User.phone_number == sender
@@ -151,10 +227,15 @@ def handle_self_description(sender: str, message: str, db: Session) -> str:
 
 def handle_matching(sender: str, message: str, db: Session) -> str:
     parts = message.split("#")
+
     if len(parts) != 3:
         return "Invalid format. SMS match#ageRange#town to 22141. E.g., match#20-25#Nairobi"
 
     _, age_range, town = parts
+
+    # Edge case: empty town
+    if not town.strip():
+        return "Invalid format. Town cannot be empty. E.g., match#20-25#Nairobi"
 
     user = db.query(models.User).filter(
         models.User.phone_number == sender
@@ -164,11 +245,27 @@ def handle_matching(sender: str, message: str, db: Session) -> str:
         return "You are not registered. SMS PENZI to 22141 to get started."
 
     age_parts = age_range.split("-")
-    if len(age_parts) != 2 or not age_parts[0].isdigit() or not age_parts[1].isdigit():
+
+    # Edge case: invalid age range format
+    if len(age_parts) != 2:
         return "Invalid age range. Use format like 20-25."
 
-    min_age = int(age_parts[0])
-    max_age = int(age_parts[1])
+    if not age_parts[0].strip().isdigit() or not age_parts[1].strip().isdigit():
+        return "Invalid age range. Use numbers only. E.g., match#20-25#Nairobi"
+
+    min_age = int(age_parts[0].strip())
+    max_age = int(age_parts[1].strip())
+
+    # Edge case: min age greater than max age
+    if min_age > max_age:
+        return f"Invalid age range. Minimum age ({min_age}) cannot be greater than maximum age ({max_age})."
+
+    # Edge case: unrealistic age range
+    if min_age < 18:
+        return "Minimum age must be at least 18."
+
+    if max_age > 100:
+        return "Maximum age cannot exceed 100."
 
     opposite_gender = "Female" if user.gender.lower() in ["male", "m"] else "Male"
 
@@ -181,17 +278,23 @@ def handle_matching(sender: str, message: str, db: Session) -> str:
     ).all()
 
     if not matches:
-        return f"Sorry, no matches found for age {age_range} in {town}. Try a different age range or town."
+        return f"Sorry, no matches found for age {age_range} in {town.strip()}. Try a different age range or town."
 
-    user.registration_stage = f"matching_{town}_{age_range}_0"
+    user.registration_stage = f"matching_{town.strip()}_{age_range}_0"
 
     for match in matches:
-        new_match = models.Match(
-            requester_phone=sender,
-            matched_phone=match.phone_number,
-            status="pending"
-        )
-        db.add(new_match)
+        # Edge case: avoid duplicate match records
+        existing = db.query(models.Match).filter(
+            models.Match.requester_phone == sender,
+            models.Match.matched_phone == match.phone_number
+        ).first()
+        if not existing:
+            new_match = models.Match(
+                requester_phone=sender,
+                matched_phone=match.phone_number,
+                status="pending"
+            )
+            db.add(new_match)
 
     db.commit()
 
@@ -214,13 +317,25 @@ def handle_next(sender: str, db: Session) -> str:
         models.User.phone_number == sender
     ).first()
 
-    if not user or not user.registration_stage.startswith("matching_"):
+    if not user:
+        return "You are not registered. SMS PENZI to 22141 to get started."
+
+    if not user.registration_stage.startswith("matching_"):
         return "You have no active search. SMS match#ageRange#town to 22141 to search."
 
     parts = user.registration_stage.split("_")
+
+    # Edge case: malformed registration stage
+    if len(parts) < 4:
+        return "You have no active search. SMS match#ageRange#town to 22141 to search."
+
     town = parts[1]
     age_range = parts[2]
-    offset = int(parts[3]) + 3
+
+    try:
+        offset = int(parts[3]) + 3
+    except ValueError:
+        return "You have no active search. SMS match#ageRange#town to 22141 to search."
 
     age_parts = age_range.split("-")
     min_age = int(age_parts[0])
@@ -255,8 +370,10 @@ def handle_next(sender: str, db: Session) -> str:
     return response.strip()
 
 
-def handle_profile_request(sender: str, message: str, db: Session) -> str:
-    phone = message.strip()
+def handle_profile_request(sender: str, phone: str, db: Session) -> str:
+    # Edge case: requesting your own profile
+    if phone == sender:
+        return "You cannot request your own profile."
 
     requested_user = db.query(models.User).filter(
         models.User.phone_number == phone
@@ -291,11 +408,20 @@ def handle_profile_request(sender: str, message: str, db: Session) -> str:
 
 
 def handle_describe(sender: str, message: str, db: Session) -> str:
-    parts = message.strip().split(" ")
-    if len(parts) != 2 or not is_phone_number(parts[1]):
+    parts = message.strip().split()
+
+    # Edge case: DESCRIBE with no phone number
+    if len(parts) < 2:
         return "Invalid format. SMS DESCRIBE 07XXXXXXXX to 22141."
 
-    phone = parts[1].strip()
+    # Edge case: DESCRIBE with invalid phone number
+    phone = clean_phone(parts[1])
+    if not is_phone_number(phone):
+        return f"Invalid phone number format. SMS DESCRIBE 07XXXXXXXX to 22141."
+
+    # Edge case: describing yourself
+    if phone == sender:
+        return "You cannot request your own description."
 
     requested_user = db.query(models.User).filter(
         models.User.phone_number == phone
@@ -315,10 +441,19 @@ def handle_yes(sender: str, db: Session) -> str:
         models.User.phone_number == sender
     ).first()
 
-    if not user or not user.registration_stage.startswith("interested_"):
+    if not user:
+        return "You are not registered. SMS PENZI to 22141 to get started."
+
+    if not user.registration_stage.startswith("interested_"):
         return "No pending interest to confirm."
 
-    requester_phone = user.registration_stage.split("_")[1]
+    parts = user.registration_stage.split("_")
+
+    # Edge case: malformed registration stage
+    if len(parts) < 2:
+        return "No pending interest to confirm."
+
+    requester_phone = parts[1]
 
     requester = db.query(models.User).filter(
         models.User.phone_number == requester_phone

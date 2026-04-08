@@ -18,6 +18,21 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 @router.post("/register")
 def register_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
+    # Edge case: password too short
+    if len(admin_data.password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters long"    
+        )
+    
+    # Edge case: username too short
+    if len(admin_data.username) < 3:
+        raise HTTPException(
+            status_code=400,
+            detail="Username must be at least 3 characters long"
+        )
+    
+    
     if db.query(models.Admin).filter(models.Admin.username == admin_data.username).first():
         raise HTTPException(status_code=400, detail="Username already exists")
 
