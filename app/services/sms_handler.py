@@ -49,7 +49,7 @@ def handle_message(sender: str, message: str, db: Session) -> str:
     try:
         if message.upper() == "PENZI":
             return (
-                "Welcome to our dating service with 6000 potential dating partners! "
+                "Welcome to our dating service with potential dating partners! "
                 "To register SMS start#name#age#gender#county#town to 22141. "
                 "E.g., start#Nickson#22#Male#Nairobi#Kitengela"
             )

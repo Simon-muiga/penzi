@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from app.database import get_db
 from app import models
 from app.schemas import (
@@ -70,36 +70,84 @@ def login_admin(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.get("/users", response_model=List[UserResponse])
+@router.get("/users")
 def get_users(
     db: Session = Depends(get_db),
-    current_admin: models.Admin = Depends(get_current_admin)
+    current_admin: models.Admin = Depends(get_current_admin),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    search: Optional[str] = Query(default=None)
 ):
-    return db.query(models.User).all()
+    query = db.query(models.User)
+
+    if search:
+        query = query.filter(
+            models.User.name.ilike(f"%{search}%") |
+            models.User.phone_number.ilike(f"%{search}%")
+        )
+
+    total = query.count()
+    users = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+        "data": users
+    }
 
 
-@router.get("/messages", response_model=List[MessageResponse])
+@router.get("/messages")
 def get_messages(
     db: Session = Depends(get_db),
-    current_admin: models.Admin = Depends(get_current_admin)
+    current_admin: models.Admin = Depends(get_current_admin),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    direction: Optional[str] = Query(default=None)
 ):
-    return db.query(models.Message).all()
+    query = db.query(models.Message)
+
+    if direction and direction in ["inbound", "outbound"]:
+        query = query.filter(models.Message.direction == direction)
+
+    query = query.order_by(models.Message.created_at.desc())
+    total = query.count()
+    messages = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+        "data": messages
+    }
 
 
-@router.get("/matches", response_model=List[MatchResponse])
+@router.get("/matches")
 def get_matches(
     db: Session = Depends(get_db),
-    current_admin: models.Admin = Depends(get_current_admin)
+    current_admin: models.Admin = Depends(get_current_admin),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    status: Optional[str] = Query(default=None)
 ):
-    matches = db.query(models.Match).all()
+    query = db.query(models.Match)
+
+    if status and status in ["pending", "accepted"]:
+        query = query.filter(models.Match.status == status)
+
+    total = query.count()
+    matches_raw = query.offset((page - 1) * page_size).limit(page_size).all()
+
     result = []
-    for match in matches:
+    for match in matches_raw:
         requester = db.query(models.User).filter(
             models.User.phone_number == match.requester_phone
-            ).first()
+        ).first()
         matched = db.query(models.User).filter(
             models.User.phone_number == match.matched_phone
-            ).first()
+        ).first()
         result.append({
             "id": match.id,
             "requester_phone": match.requester_phone,
@@ -113,8 +161,14 @@ def get_matches(
             "status": match.status,
             "created_at": match.created_at
         })
-    return result
 
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+        "data": result
+    }
 
 @router.get("/stats", response_model=StatsResponse)
 def get_stats(
