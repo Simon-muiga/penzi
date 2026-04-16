@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+
+  db:
+    image: postgres:16
+    container_name: penzi_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: penzi_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations/v1.sql:/docker-entrypoint-initdb.d/v1.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - penzi_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: penzi_backend
+    environment:
+      DATABASE_URL: postgresql://postgres:admin123@db:5432/penzi_db
+      SECRET_KEY: penzi_super_secret_key_2024_onfon
+      ALGORITHM: HS256
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - penzi_network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: penzi_frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - penzi_network
+    restart: unless-stopped
+
+networks:
+  penzi_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
